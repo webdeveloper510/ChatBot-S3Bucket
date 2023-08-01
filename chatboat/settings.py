@@ -138,9 +138,9 @@ STORAGES = {
             "staticfiles": {"BACKEND": "storages.backends.s3boto3.S3StaticStorage"}
         }
 
-AWS_S3_ACCESS_KEY_ID = ''
-AWS_S3_SECRET_ACCESS_KEY = ''
-AWS_STORAGE_BUCKET_NAME = ''
+AWS_S3_ACCESS_KEY_ID = 'AKIASW4SJFPL6VS3HCRB'
+AWS_S3_SECRET_ACCESS_KEY = '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'
+AWS_STORAGE_BUCKET_NAME = 'dl-chat-bucket'
 AWS_S3_CUSTOM_DOMAIN = '%s.s3.amazonaws.com' % AWS_STORAGE_BUCKET_NAME
 AWS_S3_OBJECT_PARAMETERS = {
     'CacheControl': 'max-age=86400',
