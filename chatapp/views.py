@@ -13,18 +13,17 @@ from docx import Document
 import re
 from nltk.corpus import stopwords
 import nltk
-import string
 from nltk.corpus import stopwords
 import PyPDF2 as pdf
 import re
-from keybert import KeyBERT
 import pandas as pd
 from polyfuzz import PolyFuzz
+from nltk import word_tokenize, sent_tokenize
+# import spacy
+# nlp = spacy.load("en_core_web_sm")
 
 ''' Global Variables'''
-
-chunk_size = 500
-overlap_size = 100
+chunk_size = 420
 arrayFilesName = []
 newDictionaryData ={}
 dictionary={}
@@ -36,7 +35,7 @@ def getting_details(request):
 
     # User Input -->
     if request.method == 'POST':
-        question = request.POST.get('question')
+        user_input = request.POST.get('question')
 
         # S3 Files Access -->
 
@@ -79,90 +78,73 @@ def getting_details(request):
                 text = "Unsupported file type"
             fullData+=text
 
-        # implement cleaning function to clean the text --> 
-
+        # implement cleaning function to clean the text
         cleaned_sentences=text_cleaning(fullData)
-
+        
         # divide text into sentences and small chunk size of piece -->
-
-        tokens= chunk_text(cleaned_sentences, chunk_size, overlap_size)
-
-        # Tokenizing Function --> 
-
-        answer = token_summary(question , tokens)
-        answer = answer.to_string()
-        response_data = {'answer': answer}
+        tokens= chunk_text(cleaned_sentences, chunk_size)
+        
+        # remove the stopwords
+        cleaned_sentences_with_stopwords=[remove_stop_words(sentences) for sentences in tokens]
+        
+        # clean teh user input
+        clean_question=text_cleaning(user_input)
+        question=remove_stop_words(clean_question)
+        
+        ## match the similarity between user question and answer
+        model = PolyFuzz("TF-IDF")
+        model.match([question],cleaned_sentences_with_stopwords)
+        result=model.get_matches()
+        pd.set_option('display.max_colwidth', None)
+        answer=result['To']
+        
+        # get the answer
+        final_answer=''
+        for ans in answer:
+            for idx, tokenized_sentence in enumerate(tokens):
+                if ans in cleaned_sentences_with_stopwords[idx]:
+                    final_answer=' '.join(tokenized_sentence.split())
+        
+        # replace the sentence starting with stopwords
+        output=''
+        stop_words = set(stopwords.words('english'))
+        word_tokens = word_tokenize(final_answer)  
+        if len(word_tokens[0])==1:
+            word_tokens = word_tokens[1:]
+            output = ' '.join(word_tokens)
+        if word_tokens[0] in stop_words:
+            word_tokens = word_tokens[1:]
+            output = ' '.join(word_tokens)
+        elif word_tokens[1] in stop_words:
+            word_tokens = word_tokens[2:]
+            output = ' '.join(word_tokens)
+        else:
+            output=final_answer
+        response_data = {'answer': output.title()}
         return HttpResponse(json.dumps(response_data), content_type='application/json')
 
 
-
-
 def text_cleaning(text):
-  punch_to_remove=string.punctuation
-  input_text=text.lower()                                                                   # LOWER THE TEXT
-  input_text=''.join(char for char in input_text if char not in punch_to_remove)            # REMOVE PUNCTUTATION
-  input_text=''.join(word for word in input_text if not word.isdigit())                     # REMOVE THE NUMBER
-  input_text=' '.join(input_text.split())                                                   # REMOVE THE EXTRA SPACES
-  input_text=re.sub(r'(!)1+','',input_text)                                                       # REM0VE THE REPITATION OF THE PUNCTUATION
-  return input_text
-
+  sentence = text.lower()
+  sentence = re.sub(r'[^a-z0-9\s]', '', sentence)                                                 # REMOVE THE EXTRA SPACES
+  return sentence
 
 # make a function for removing the unneccsary words from the text
-def stop_words(text):
+def remove_stop_words(text):
     words = nltk.word_tokenize(text)
     stop_words = set(stopwords.words('english'))
     filtered_words = [word for word in words if word not in stop_words]
     filtered_text = ' '.join(filtered_words)
     return filtered_text
 
-def chunk_text(text, chunk_size, overlap_size):
+def chunk_text(text, chunk_size):
     chunks = []
     start = 0
-
     while start < len(text):
         end = start + chunk_size
         if end > len(text):
             end = len(text)
         chunks.append(text[start:end])
-        start += chunk_size - overlap_size
+        start += chunk_size+1
     return chunks
-
-
-
-def token_summary(user_input,tokens):
-    cleaned_sentences_with_stopwords=[stop_words(sentences) for sentences in tokens]
-
-    for i , value in enumerate(tokens):
-        dictionary[i]=value
-
-    extracted_labels = []
-    kw_model = KeyBERT()
-    for value in cleaned_sentences_with_stopwords:
-        keywords = kw_model.extract_keywords(value)
-        keyword= kw_model.extract_keywords(value, keyphrase_ngram_range=(1, 2), stop_words='english',top_n=2)
-        label = ' '.join(k[0] for k in keyword)
-        extracted_labels.append(label)
-
-    result_list = []
-    for item in extracted_labels:
-        words = item.split() # Split the item into words
-        unique_words = list(set(words)) # Create a set to remove duplicates and convert back to list
-        cleaned_item = ' '.join(unique_words) # Join the unique words back together
-        result_list.append(cleaned_item)
-
-
-    count = 0
-    for key, value in dictionary.items():
-        newDictionaryData[result_list[count]]=value
-        count +=1
-        
-        clean_question=text_cleaning(user_input)
-        question=stop_words(clean_question)
-
-        model = PolyFuzz("TF-IDF")
-        model.match([question],tokens)
-        result=model.get_matches()
-        pd.set_option('display.max_colwidth', None)
-        answer=result['To']
-        return answer
 
