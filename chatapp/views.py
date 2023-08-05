@@ -19,11 +19,11 @@ import re
 import pandas as pd
 from polyfuzz import PolyFuzz
 from nltk import word_tokenize, sent_tokenize
-# import spacy
-# nlp = spacy.load("en_core_web_sm")
+import language_tool_python  
+my_tool = language_tool_python.LanguageTool('en-US')  
 
-''' Global Variables'''
-chunk_size = 420
+
+chunk_size = 400
 arrayFilesName = []
 newDictionaryData ={}
 dictionary={}
@@ -106,21 +106,37 @@ def getting_details(request):
                     final_answer=' '.join(tokenized_sentence.split())
         
         # replace the sentence starting with stopwords
-        output=''
         stop_words = set(stopwords.words('english'))
-        word_tokens = word_tokenize(final_answer)  
-        if len(word_tokens[0])==1:
-            word_tokens = word_tokens[1:]
-            output = ' '.join(word_tokens)
-        if word_tokens[0] in stop_words:
-            word_tokens = word_tokens[1:]
-            output = ' '.join(word_tokens)
-        elif word_tokens[1] in stop_words:
-            word_tokens = word_tokens[2:]
-            output = ' '.join(word_tokens)
-        else:
-            output=final_answer
-        response_data = {'answer': output.title()}
+        def check_fisrt_word(text): 
+            output=''
+            word_tokens = word_tokenize(text)
+            if len(word_tokens[0])==1:
+                word_tokens = word_tokens[1:]
+                output = ' '.join(word_tokens)+'.'
+            elif word_tokens[0] in stop_words:
+                word_tokens = word_tokens[1:]
+                output = ' '.join(word_tokens)+'.'
+                
+            elif word_tokens[1] in stop_words:
+                word_tokens = word_tokens[2:]
+                output = ' '.join(word_tokens)+'.'
+            else:
+                output=final_answer
+            return output
+        
+        def check_last_word(text):
+            output=''
+            word_tokens = word_tokenize(text)
+            if len(word_tokens[-2])==1:
+                word_tokens = word_tokens[:-2]
+                output = ' '.join(word_tokens)+'.'
+            else:
+                output=final_answer
+                return output 
+            
+        get_output=check_fisrt_word(final_answer)
+        correct_text = check_last_word(my_tool.correct(get_output))+'.'
+        response_data = {'answer': correct_text.title()}
         return HttpResponse(json.dumps(response_data), content_type='application/json')
 
 
