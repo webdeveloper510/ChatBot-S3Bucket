@@ -23,7 +23,7 @@ from nltk import word_tokenize, sent_tokenize
 import language_tool_python  
 my_tool =language_tool_python.LanguageTool('en-US')  
 
-chunk_size = 500
+chunk_size = 400
 arrayFilesName = []
 newDictionaryData ={}
 dictionary={}
@@ -36,7 +36,6 @@ def getting_details(request):
     # User Input -->
     if request.method == 'POST':
         user_input = request.POST.get('question')
-
         # S3 Files Access -->
 
         s3 = boto3.client('s3', aws_access_key_id=settings.AWS_S3_ACCESS_KEY_ID, aws_secret_access_key=settings.AWS_S3_SECRET_ACCESS_KEY)
@@ -77,16 +76,13 @@ def getting_details(request):
             else:
                 text = "Unsupported file type"
             fullData+=text
-
         # implement cleaning function to clean the text
         cleaned_sentences=text_cleaning(fullData)
         tokens= chunk_text(cleaned_sentences, chunk_size)
         cleaned_sentences_with_stopwords=[remove_stop_words(sentences) for sentences in tokens]
-       
         # clean teh user input
         clean_question=text_cleaning(user_input)
         question=remove_stop_words(clean_question)
-        
         # convert strings into vector form
         vectorizer = TfidfVectorizer()
         tfidf_matrix = vectorizer.fit_transform(cleaned_sentences_with_stopwords)
@@ -103,6 +99,7 @@ def getting_details(request):
         for sentence in similar_sentences:
             if similarity_scores[tokens.index(sentence)] > similarity_threshold:
                 final_answer = sentence
+                break
                 
         if final_answer == "":
             model = PolyFuzz("TF-IDF")
@@ -118,14 +115,17 @@ def getting_details(request):
                     if ans in cleaned_sentences_with_stopwords[idx]:
                         final_answer=' '.join(tokenized_sentence.split())
         final_output=my_tool.correct(final_answer)
-        response_data = {'answer': final_output.title()}
+        
+        print('final Output------------>>>',final_output)
+        response_data = {'answer': final_output.title()+"."}
         return HttpResponse(json.dumps(response_data), content_type='application/json')
 
 
 def text_cleaning(text):
-  sentence = text.lower()
-  sentence = re.sub(r'[^a-z0-9\s]', '', sentence)                                                 # REMOVE THE EXTRA SPACES
-  return sentence
+    sentence = text.lower()
+    sentence = re.sub(r'[^a-z0-9\s]', '', sentence)                                                 # REMOVE THE EXTRA SPACES
+    all_text= ' '.join(sentence.split())
+    return all_text
 
 # make a function for removing the unneccsary words from the text
 def remove_stop_words(text):
