@@ -11,19 +11,19 @@ import csv
 import nltk
 from docx import Document
 import re
+import numpy as np
 from nltk.corpus import stopwords
-import nltk
 from nltk.corpus import stopwords
 import PyPDF2 as pdf
 import re
 import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
 from polyfuzz import PolyFuzz
 from nltk import word_tokenize, sent_tokenize
 import language_tool_python  
-my_tool = language_tool_python.LanguageTool('en-US')  
+my_tool =language_tool_python.LanguageTool('en-US')  
 
-
-chunk_size = 400
+chunk_size = 500
 arrayFilesName = []
 newDictionaryData ={}
 dictionary={}
@@ -80,63 +80,45 @@ def getting_details(request):
 
         # implement cleaning function to clean the text
         cleaned_sentences=text_cleaning(fullData)
-        
-        # divide text into sentences and small chunk size of piece -->
         tokens= chunk_text(cleaned_sentences, chunk_size)
-        
-        # remove the stopwords
         cleaned_sentences_with_stopwords=[remove_stop_words(sentences) for sentences in tokens]
-        
+       
         # clean teh user input
         clean_question=text_cleaning(user_input)
         question=remove_stop_words(clean_question)
         
-        ## match the similarity between user question and answer
-        model = PolyFuzz("TF-IDF")
-        model.match([question],cleaned_sentences_with_stopwords)
-        result=model.get_matches()
-        pd.set_option('display.max_colwidth', None)
-        answer=result['To']
+        # convert strings into vector form
+        vectorizer = TfidfVectorizer()
+        tfidf_matrix = vectorizer.fit_transform(cleaned_sentences_with_stopwords)
+        input_vector = vectorizer.transform([question])
+        
+        # find the similarity 
+        similarity_scores = tfidf_matrix.dot(input_vector.T).toarray().flatten()
+        sorted_indices = np.argsort(similarity_scores)[::-1]  # Sorting in descending order
+        similarity_threshold = 0.3
+        similar_sentences = [tokens[i] for i in sorted_indices if similarity_scores[i] > similarity_threshold]
         
         # get the answer
-        final_answer=''
-        for ans in answer:
-            for idx, tokenized_sentence in enumerate(tokens):
-                if ans in cleaned_sentences_with_stopwords[idx]:
-                    final_answer=' '.join(tokenized_sentence.split())
-        
-        # replace the sentence starting with stopwords
-        stop_words = set(stopwords.words('english'))
-        def check_fisrt_word(text): 
-            output=''
-            word_tokens = word_tokenize(text)
-            if len(word_tokens[0])==1:
-                word_tokens = word_tokens[1:]
-                output = ' '.join(word_tokens)+'.'
-            elif word_tokens[0] in stop_words:
-                word_tokens = word_tokens[1:]
-                output = ' '.join(word_tokens)+'.'
+        final_answer = ""
+        for sentence in similar_sentences:
+            if similarity_scores[tokens.index(sentence)] > similarity_threshold:
+                final_answer = sentence
                 
-            elif word_tokens[1] in stop_words:
-                word_tokens = word_tokens[2:]
-                output = ' '.join(word_tokens)+'.'
-            else:
-                output=final_answer
-            return output
-        
-        def check_last_word(text):
-            output=''
-            word_tokens = word_tokenize(text)
-            if len(word_tokens[-2])==1:
-                word_tokens = word_tokens[:-2]
-                output = ' '.join(word_tokens)+'.'
-            else:
-                output=final_answer
-                return output 
+        if final_answer == "":
+            model = PolyFuzz("TF-IDF")
+            model.match([question],cleaned_sentences_with_stopwords)
+            result=model.get_matches()
+            pd.set_option('display.max_colwidth', None)
+            answer=result['To']
             
-        get_output=check_fisrt_word(final_answer)
-        correct_text = check_last_word(my_tool.correct(get_output))+'.'
-        response_data = {'answer': correct_text.title()}
+            # get the answer
+            final_answer=''
+            for ans in answer:
+                for idx, tokenized_sentence in enumerate(tokens):
+                    if ans in cleaned_sentences_with_stopwords[idx]:
+                        final_answer=' '.join(tokenized_sentence.split())
+        final_output=my_tool.correct(final_answer)
+        response_data = {'answer': final_output.title()}
         return HttpResponse(json.dumps(response_data), content_type='application/json')
 
 
@@ -160,7 +142,10 @@ def chunk_text(text, chunk_size):
         end = start + chunk_size
         if end > len(text):
             end = len(text)
+        else:
+            while end < len(text) and text[end] != ' ':
+                end -= 1
         chunks.append(text[start:end])
-        start += chunk_size+1
+        start = end + 1
     return chunks
 
